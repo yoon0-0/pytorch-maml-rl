@@ -1,16 +1,16 @@
 # General
 # -------
 # Name of the environment.
-env-name: "Ant-SoftMetaRL-v0"
+env-name: "HalfCheetah-SoftMetaRL-v0"
 
 # Additional parameters for the environment (eg. bound for task sampling).
 env-kwargs:
-# max_episode_steps: 100
-  name: 'Ant with random box and leg'
+  # max_episode_steps: 100
+  name: 'HalfCheetah with random box and leg'
   # xml_path: '/xml/ant_box_leg.xml'
   frame_skip: 5
-  rand_mass_box: [1, 2]
-  rand_mass_leg: [1, 2]
+  rand_mass_box: [1, 4]
+  rand_mass_leg: [1, 4]
   rand_fric: null
   render_mode: null #'human'
   render_w: 1500
@@ -32,7 +32,7 @@ first-order: false
 # Policy network
 # --------------
 # Number of hidden units in each layer.
-hidden-sizes: [128, 128]
+hidden-sizes: [64, 64]
 
 # Non-linear activation function to apply after each hidden layer.
 nonlinearity: "tanh"

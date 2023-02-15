@@ -25,6 +25,7 @@ def main(args):
             os.makedirs(args.output_folder)
         policy_filename = os.path.join(args.output_folder, 'policy.th')
         config_filename = os.path.join(args.output_folder, 'config.json')
+        reward_filename = os.path.join(args.output_folder)
 
         with open(config_filename, 'w') as f:
             config.update(vars(args))
@@ -63,9 +64,10 @@ def main(args):
                            device=args.device)
 
     num_iterations = 0
+    eval_rewards = []
     for batch in trange(config['num-batches']):
         tasks = sampler.sample_tasks(num_tasks=config['meta-batch-size'])
-        episodes = sampler.sample(tasks,
+        episodes, x_diff = sampler.sample(tasks,
                                        num_steps=config['num-steps'],
                                        fast_lr=config['fast-lr'],
                                        gamma=config['gamma'],
@@ -86,18 +88,22 @@ def main(args):
                     num_iterations=num_iterations,
                     train_returns=get_returns(train_episodes[0]),
                     valid_returns=get_returns(valid_episodes))
-
         wandb.log({
             'train_returns': np.mean(logs['train_returns']),
             'valid_returns': np.mean(logs['valid_returns']),
             'loss': np.mean(logs['loss_after']),
             'kl_after': np.mean(logs['kl_after']),
+            'x_diff': x_diff
         })
+        eval_rewards.append(np.mean(logs['valid_returns']))
 
         # Save policy
         if args.output_folder is not None:
-            with open(policy_filename, 'wb') as f:
+            with open(policy_filename+str(batch), 'wb') as f:
                 torch.save(policy.state_dict(), f)
+
+        eval_reward_np = np.array(eval_rewards)
+        np.save(reward_filename+'/reward{}.npy'.format(args.seed), eval_reward_np)
 
 
 if __name__ == '__main__':
@@ -107,14 +113,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Reinforcement learning with '
         'Model-Agnostic Meta-Learning (MAML) - Train')
 
-    parser.add_argument('--config', type=str, required=True,
+    parser.add_argument('--config', default='configs/maml/ant-soft-metaRL-ray.yaml', type=str, required=True,
         help='path to the configuration file.')
 
     # Miscellaneous
     misc = parser.add_argument_group('Miscellaneous')
-    misc.add_argument('--output-folder', type=str,
+    misc.add_argument('--output-folder', default='ant-soft-metaRL-ray-0.5-1', type=str,
         help='name of the output folder')
-    misc.add_argument('--seed', type=int, default=None,
+    misc.add_argument('--seed', type=int, default=1,
         help='random seed')
     misc.add_argument('--num-workers', type=int, default=mp.cpu_count() - 1,
         help='number of workers for trajectories sampling (default: '
@@ -128,3 +134,5 @@ if __name__ == '__main__':
                    and args.use_cuda) else 'cpu')
 
     main(args)
+    
+    wandb.alert('finished', 'Hooray!!')

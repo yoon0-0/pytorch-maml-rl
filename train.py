@@ -4,6 +4,7 @@ import json
 import os
 import yaml
 from tqdm import trange
+import numpy as np
 
 import maml_rl.envs
 from maml_rl.metalearners import MAMLTRPO
@@ -11,9 +12,13 @@ from maml_rl.baseline import LinearFeatureBaseline
 from maml_rl.samplers import MultiTaskSampler
 from maml_rl.utils.helpers import get_policy_for_env, get_input_size
 from maml_rl.utils.reinforcement_learning import get_returns
+import wandb
+wandb.init(project="maml-mp")
 
 
 def main(args):
+    wandb.config.update(args)
+
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
 
@@ -39,6 +44,7 @@ def main(args):
                                 hidden_sizes=config['hidden-sizes'],
                                 nonlinearity=config['nonlinearity'])
     policy.share_memory()
+    wandb.watch(policy)
 
     # Baseline
     baseline = LinearFeatureBaseline(get_input_size(env))
@@ -82,6 +88,13 @@ def main(args):
                     train_returns=get_returns(train_episodes[0]),
                     valid_returns=get_returns(valid_episodes))
 
+        wandb.log({
+            'train_returns': np.mean(logs['train_returns']),
+            'valid_returns': np.mean(logs['valid_returns']),
+            'loss': np.mean(logs['loss_after']),
+            'kl_after': np.mean(logs['kl_after']),
+        })
+
         # Save policy
         if args.output_folder is not None:
             with open(policy_filename, 'wb') as f:
@@ -94,7 +107,6 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Reinforcement learning with '
         'Model-Agnostic Meta-Learning (MAML) - Train')
-
     parser.add_argument('--config', type=str, required=True,
         help='path to the configuration file.')
 

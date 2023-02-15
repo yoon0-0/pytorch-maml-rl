@@ -13,6 +13,7 @@ class BatchEpisodes(object):
         self._observations_list = [[] for _ in range(batch_size)]
         self._actions_list = [[] for _ in range(batch_size)]
         self._rewards_list = [[] for _ in range(batch_size)]
+        self._infos_list = [[] for _ in range(batch_size)]
 
         self._observation_shape = None
         self._action_shape = None
@@ -21,6 +22,7 @@ class BatchEpisodes(object):
         self._actions = None
         self._rewards = None
         self._returns = None
+        self._infos = None
         self._mask = None
         self._advantages = None
         self._lengths = None
@@ -88,6 +90,17 @@ class BatchEpisodes(object):
         return self._returns
 
     @property
+    def infos(self):
+        # xdiff
+        if self._infos is None:
+            infos = np.zeros((len(self), self.batch_size), dtype=np.float32)#dict(reward=0., x_diff=0.)
+            for i in range(self.batch_size):
+                length = self.lengths[i]
+                print(self._infos_list[i])
+                np.stack(self._infos_list[i]['x_diff'], axis=0, out=infos[:length, i])
+        return infos
+
+    @property
     def mask(self):
         if self._mask is None:
             self._mask = torch.zeros((len(self), self.batch_size),
@@ -114,6 +127,7 @@ class BatchEpisodes(object):
             self._observations_list[batch_id].append(observation.astype(np.float32))
             self._actions_list[batch_id].append(action.astype(np.float32))
             self._rewards_list[batch_id].append(reward.astype(np.float32))
+
 
     @property
     def logs(self):

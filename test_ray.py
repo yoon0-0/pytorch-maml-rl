@@ -9,8 +9,12 @@ from maml_rl.baseline import LinearFeatureBaseline
 from maml_rl.samplers import MultiTaskSamplerRay
 from maml_rl.utils.helpers import get_policy_for_env, get_input_size
 from maml_rl.utils.reinforcement_learning import get_returns
+import wandb
+
+wandb.init(project="maml_test")
 
 def main(args):
+    wandb.config.update(args)
 
     with open(args.config, 'r') as f:
         config = json.load(f)
@@ -20,7 +24,11 @@ def main(args):
         torch.cuda.manual_seed_all(args.seed)
 
     env = gym.make(config['env-name'], **config['env-kwargs'])
+    if config['transfer-env']:
+        print(config['transfer-env'])
+        transfer_env = gym.make(config['transfer-env'], **config['env-kwargs'])
     env.close()
+    transfer_env.close()
 
     # Policy
     policy = get_policy_for_env(env,
@@ -35,32 +43,39 @@ def main(args):
     baseline = LinearFeatureBaseline(get_input_size(env))
 
     # Sampler
-    sampler = MultiTaskSamplerRay(config['env-name'],
+    sampler = MultiTaskSamplerRay(config['transfer-env'],
                                env_kwargs=config['env-kwargs'],
                                batch_size=config['fast-batch-size'],
                                policy=policy,
                                baseline=baseline,
-                               env=env,
+                               env=transfer_env,
                                seed=args.seed,
                                num_workers=config['meta-batch-size'])
 
     logs = {'tasks': []}
+    num_iterations = 0
     train_returns, valid_returns = [], []
     for batch in trange(args.num_batches):
         tasks = sampler.sample_tasks(num_tasks=config['meta-batch-size'])
-        train_episodes, valid_episodes = sampler.sample(tasks,
+        (train_episodes, valid_episodes), x_diff = sampler.sample(tasks,
                                                         num_steps=config['num-steps'],
                                                         fast_lr=config['fast-lr'],
                                                         gamma=config['gamma'],
                                                         gae_lambda=config['gae-lambda'],
                                                         device=args.device)
 
-        logs['tasks'].extend(tasks)
-        train_returns.append(get_returns(train_episodes[0]))
-        valid_returns.append(get_returns(valid_episodes))
+        # logs['tasks'].extend(tasks)
+        logs.update(tasks=tasks,
+                    num_iterations=num_iterations,
+                    train_returns=get_returns(train_episodes[0]),
+                    valid_returns=get_returns(valid_episodes))
+        # train_returns.append(get_returns(train_episodes[0]))
+        # valid_returns.append(get_returns(valid_episodes))
+        num_iterations += sum(sum(episode.lengths) for episode in train_episodes[0])
+        num_iterations += sum(sum(episode.lengths) for episode in valid_episodes)
 
-    logs['train_returns'] = np.concatenate(train_returns, axis=0)
-    logs['valid_returns'] = np.concatenate(valid_returns, axis=0)
+    # logs['train_returns'] = np.concatenate(train_returns, axis=0)
+    # logs['valid_returns'] = np.concatenate(valid_returns, axis=0)
 
     with open(args.output, 'wb') as f:
         np.savez(f, **logs)
@@ -81,9 +96,9 @@ if __name__ == '__main__':
 
     # Evaluation
     evaluation = parser.add_argument_group('Evaluation')
-    evaluation.add_argument('--num-batches', type=int, default=10,
+    evaluation.add_argument('--num-batches', type=int, default=1,
         help='number of batches (default: 10)')
-    evaluation.add_argument('--meta-batch-size', type=int, default=40,
+    evaluation.add_argument('--meta-batch-size', type=int, default=1,
         help='number of tasks per batch (default: 40)')
 
     # Miscellaneous

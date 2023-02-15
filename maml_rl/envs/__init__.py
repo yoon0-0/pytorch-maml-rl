@@ -70,3 +70,21 @@ register(
     entry_point='maml_rl.envs.utils.wrappers:mujoco_wrapper',
     kwargs={'entry_point': 'maml_rl.envs.mujoco.ant_soft_metaRL:AntSoftMetaRL'}
 )
+
+register(
+    'HalfCheetah-SoftMetaRL-v0',
+    entry_point='maml_rl.envs.utils.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'maml_rl.envs.mujoco.half_cheetah_soft_metaRL:HalfCheetahSoftMetaRL'}
+)
+
+register(
+    'Snapbot-4Leg-v0',
+    entry_point='maml_rl.envs.utils.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'maml_rl.envs.mujoco.snapbot_soft_metaRL:Snapbot4EnvClass'}
+)
+
+register(
+    'Snapbot-6Leg-v0',
+    entry_point='maml_rl.envs.utils.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'maml_rl.envs.mujoco.snapbot_soft_metaRL:Snapbot6EnvClass'}
+)

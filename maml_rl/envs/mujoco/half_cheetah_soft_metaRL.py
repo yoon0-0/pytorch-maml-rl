@@ -1,4 +1,5 @@
-import math, os
+
+import math, os, torch
 import numpy as np
 from gym import utils
 from gym.envs.mujoco import mujoco_env
@@ -26,28 +27,28 @@ def quaternion_to_euler_angle(w, x, y, z):
 	
     return X, Y, Z
 
-class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
+class HalfCheetahSoftMetaRL(mujoco_env.MujocoEnv, utils.EzPickle):
     def __init__(self,
                 VERBOSE     = True,
-                name        = 'Ant with random box and leg',
-                # xml_path    = '/xml/ant_box_leg.xml',
+                name        = 'Half cheetah with random box and leg',
+                xml_path    = 'mujoco_random_env/xml/half_cheetah_box_leg.xml',
                 frame_skip  = 5,
                 rand_mass_box = [1, 4],
                 rand_mass_leg = [1, 4],
-                rand_fric   = None,
+                rand_fric   = [0.1, 1.0],
                 render_mode = 'human',
                 render_w    = 1500,
                 render_h    = 1000,
                 render_res  = 200,
                 task        = {},
-                index         = 0
+                index       = 0
                 ):
         """
             Initialize
         """
         self.VERBOSE    = VERBOSE
         self.name       = name
-        # self.xml_path   = os.path.dirname(os.path.abspath(__file__))+xml_path+"_"+idx
+        self.xml_path   = os.path.abspath(xml_path)
         self.frame_skip = frame_skip
         self.rand_mass_box = rand_mass_box
         self.rand_mass_leg = rand_mass_leg
@@ -56,16 +57,17 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
         self.render_w = render_w
         self.render_h = render_h
         self.render_res = render_res
-        self.k_p = 0.005
-        self.k_i = 0.01
-        self.k_d = 0.001
-        self.joint_pos_deg_min = np.array([-30,30,-30,-70,-30,-70,-30,30])
-        self.joint_pos_deg_max = np.array([30,70,30,-30,30,-30,30,70])
-        self._task = task
+        self.k_p = 0.01
+        self.k_i = 0.05
+        self.k_d = 0.0001
+        self.joint_pos_deg_min = np.array([-20,-20,-20,-20,-20,-20])
+        self.joint_pos_deg_max = np.array([20,20,20,20,20,20])
         self._index = index
+        self._task = task
 
-        self.set_box_weight(task.get('box_weight', 0))
-        # self.set_leg_weight(task.get('leg_weight', 0))
+        # self.reset_random()
+        # self.set_box_weight(task.get('box_weight', 0))
+        self.set_leg_weight(task.get('leg_weight', 0))
 
     def step(self, a):
         """
@@ -73,26 +75,19 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
         """        
         # Before run
         x_pos_before      = self.get_body_com("torso")[0]
-        y_pos_before      = self.get_body_com("torso")[1]
-        heading_before    = self.get_heading()
         self.prev_state   = np.concatenate([self.sim.data.qpos.flat[2:], self.sim.data.qvel.flat])
         self.prev_torque  = a
-
+        
         # Run sim
         self.do_simulation(a, self.frame_skip)
         x_pos_after   = self.get_body_com("torso")[0]
-        y_pos_after   = self.get_body_com("torso")[1]
-        heading_after = self.get_heading()
-        y_diff        = y_pos_after - y_pos_before
-        heading_diff  = heading_after - heading_before
-        z_pos = self.get_body_com("torso")[2]
 
         # Accumulate
         self.a    = a
         self.o    = self._get_obs()
         # self.r    = (x_pos_after - x_pos_before) / self.dt
-        self.r = min((x_pos_after-x_pos_before)/self.dt, 1) - 0.0001*(heading_diff**2+y_diff**2) - 0.5*np.square(a).sum() + 1
-        self.info = dict(reward=self.r, x_diff=x_pos_after-x_pos_before)
+        self.r = min((x_pos_after-x_pos_before)/self.dt, 1) - 0.1*np.square(a).sum() + 1
+        self.info = dict()
 
         # Done condition
         state   = self.state_vector()
@@ -100,7 +95,7 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
         notdone = np.isfinite(state).all and abs(r) < 170
         self.d  = not notdone
 
-        return (self.o, self.r, self.d, self.info)
+        return self.o, self.r, self.d, self.info
 
     def _get_obs(self):
         """
@@ -112,7 +107,7 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
             self.prev_state,
             self.prev_torque,
         ])
-    
+        
     def reset_model(self):
         """
             Reset
@@ -120,10 +115,12 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
         o = np.zeros(self.odim)
         return o
 
-    def _init(self):
+    def reset_random(self):
         # self.set_random_box_weight()
         # self.set_random_leg_weight()
         # self.set_random_fric()
+        
+        # Open xml
         try:
             mujoco_env.MujocoEnv.__init__(
             self,
@@ -139,12 +136,12 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
             )
         utils.EzPickle.__init__(self)
 
-        # Observation and action dimension
+        # Observation and action dimensions 
         self.odim = self.observation_space.shape[0]
         self.adim = self.action_space.shape[0]
 
         if self.VERBOSE:
-            print("Ant(4legs) with random box and leg weights")   
+            print("HalfCheetah(2legs) with random box and leg weights")   
             print("Obs Dim: [{}] Act Dim: [{}] dt:[{}]".format(self.odim, self.adim, self.dt))
             print("box_mass:[{}] leg_mass: [{}] fric:[{}]".format(self.get_box_weight(), self.get_leg_weight(), self.get_fric()))
 
@@ -168,42 +165,41 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
         target_xml = open(self.xml_path, 'rt', encoding='UTF8')
         tree = ET.parse(target_xml)
         root = tree.getroot()
-        target_tag= root[7][2][7][2][2]
+        target_tag = root[7][2][8][2][2]
         target_tag.attrib["mass"] = "{}".format(box_weight)
         target_tag.attrib["rgba"] = "{} {} {} 1".format(box_rgb, box_rgb, box_rgb)
         tree.write(self.xml_path)
 
     def set_box_weight(self, box_weight, TEST=False):
         if not TEST:
-            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/ant_box_leg_"+str(self._index)+".xml"
+            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/halfcheetah/half_cheetah_"+str(self._index)+".xml"
         else:
             print('TEST MODE')
-            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/ant_box_leg_test.xml"
+            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/halfcheetah/half_cheetah_test.xml"
         self.xml_path = xml_path
         low_bound      = self.rand_mass_box[0]
         high_bound     = self.rand_mass_box[1]
         mass_amplitude = high_bound - low_bound
-        if mass_amplitude == 0: mass_amplitude = 1
         box_rgb    = np.round(abs((box_weight-low_bound)/mass_amplitude - 1), 3)
-        target_xml = open(xml_path, 'rt', encoding='UTF8')
+        target_xml = open(self.xml_path, 'rt', encoding='UTF8')
         tree = ET.parse(target_xml)
         root = tree.getroot()
-        target_tag= root[7][2][7][2][2]
+        target_tag = root[7][2][8][2][2]
         target_tag.attrib["mass"] = "{}".format(box_weight)
         target_tag.attrib["rgba"] = "{} {} {} 1".format(box_rgb, box_rgb, box_rgb)
-        tree.write(xml_path)
+        tree.write(self.xml_path)
 
         try:
             mujoco_env.MujocoEnv.__init__(
             self,
-            model_path      = xml_path,
+            model_path      = self.xml_path,
             frame_skip      = self.frame_skip,
             mujoco_bindings = 'mujoco_py'
             )
         except:
             mujoco_env.MujocoEnv.__init__(
             self,
-            model_path      = xml_path,
+            model_path      = self.xml_path,
             frame_skip      = self.frame_skip
             )
         utils.EzPickle.__init__(self)
@@ -211,20 +207,18 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
         self.odim = self.observation_space.shape[0]
         self.adim = self.action_space.shape[0]
 
-
     def set_random_leg_weight(self):
-        low_bound      = self.rand_mass_leg[0]/3
-        high_bound     = self.rand_mass_leg[1]/3
+        low_bound      = self.rand_mass_leg[0]/2
+        high_bound     = self.rand_mass_leg[1]/2
         mass_amplitude = high_bound - low_bound
         leg_weight = np.round(np.random.uniform(low_bound, high_bound), 2)
         leg_rgb    = np.round(abs((leg_weight-low_bound)/mass_amplitude - 1), 3)
         target_xml = open(self.xml_path, 'rt', encoding='UTF8')
         tree = ET.parse(target_xml)
         root = tree.getroot()
-        target_tag_1 = root[7][2][5][0]
-        target_tag_2 = root[7][2][5][1][1]
-        target_tag_3 = root[7][2][5][1][2][1]
-        target_list  = [target_tag_1, target_tag_2, target_tag_3]
+        target_tag_1 = root[7][2][6][2][1]
+        target_tag_2 = root[7][2][6][2][2][1]
+        target_list  = [target_tag_1, target_tag_2]
         for i in target_list:
             i.attrib["mass"] = "{}".format(leg_weight)
             i.attrib["rgba"] = "{} {} {} 1".format(leg_rgb, leg_rgb, leg_rgb)
@@ -232,27 +226,26 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
 
     def set_leg_weight(self, leg_weight, TEST=False):
         if not TEST:
-            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/ant_leg_"+str(self._index)+".xml"
+            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/halfcheetah/half_cheetah_"+str(self._index)+".xml"
         else:
             print('TEST MODE')
-            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/ant_leg_test.xml"
+            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/halfcheetah/half_cheetah_test.xml"
         self.xml_path = xml_path
-        low_bound      = self.rand_mass_leg[0]/3
-        high_bound     = self.rand_mass_leg[1]/3
+        low_bound      = self.rand_mass_leg[0]/2
+        high_bound     = self.rand_mass_leg[1]/2
         mass_amplitude = high_bound - low_bound
         if mass_amplitude != 0:
-            leg_rgb    = np.round(abs((leg_weight/3-low_bound)/mass_amplitude - 1), 3)
+            leg_rgb    = np.round(abs((leg_weight/2-low_bound)/mass_amplitude - 1), 3)
         else:
-            leg_rgb    = np.round(abs((leg_weight/3-low_bound)/1 - 1), 3)
+            leg_rgb    = np.round(abs((leg_weight/2-low_bound)/1 - 1), 3)
         target_xml = open(self.xml_path, 'rt', encoding='UTF8')
         tree = ET.parse(target_xml)
         root = tree.getroot()
-        target_tag_1 = root[5][2][5][0]
-        target_tag_2 = root[5][2][5][1][1]
-        target_tag_3 = root[5][2][5][1][2][1]
-        target_list  = [target_tag_1, target_tag_2, target_tag_3]
+        target_tag_1 = root[5][2][6][2][1]
+        target_tag_2 = root[5][2][6][2][2][1]
+        target_list  = [target_tag_1, target_tag_2]
         for i in target_list:
-            i.attrib["mass"] = "{}".format(leg_weight/3)
+            i.attrib["mass"] = "{}".format(leg_weight/2)
             i.attrib["rgba"] = "{} {} {} 1".format(leg_rgb, leg_rgb, leg_rgb)
         tree.write(self.xml_path)
 
@@ -282,18 +275,33 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
         target_xml = open(self.xml_path, 'rt', encoding='UTF8')
         tree = ET.parse(target_xml)
         root = tree.getroot()
-        target_tag = root[3][1]
-        target_tag.attrib["friction"] = "{} 0.3 0.3".format(friction)
+        target_tag = root[1][1]
+        target_tag.attrib["friction"] = "{} 0.1 0.1".format(friction)
         tree.write(self.xml_path)
 
     def set_fric(self, fric):
-        friction   = np.round(fric, 2)
+        friction = np.round(fric, 2)        
         target_xml = open(self.xml_path, 'rt', encoding='UTF8')
         tree = ET.parse(target_xml)
         root = tree.getroot()
-        target_tag = root[3][1]
-        target_tag.attrib["friction"] = "{} 0.3 0.3".format(friction)
+        target_tag = root[1][1]
+        target_tag.attrib["friction"] = "{} 0.1 0.1".format(friction)
         tree.write(self.xml_path)
+
+        try:
+            mujoco_env.MujocoEnv.__init__(
+            self,
+            model_path      = self.xml_path,
+            frame_skip      = self.frame_skip,
+            mujoco_bindings = 'mujoco_py'
+            )
+        except:
+            mujoco_env.MujocoEnv.__init__(
+            self,
+            model_path      = self.xml_path,
+            frame_skip      = self.frame_skip
+            )
+        utils.EzPickle.__init__(self)
         
     def get_box_weight(self):
         """
@@ -302,7 +310,7 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
         xml    = open(self.xml_path, 'rt', encoding='UTF8')
         tree   = ET.parse(xml)
         root   = tree.getroot()
-        target = root[7][2][7][2][2]
+        target = root[7][2][8][2][2]
         mass   = np.round(float(target.attrib["mass"]), 2)
         return mass
 
@@ -313,15 +321,15 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
         xml    = open(self.xml_path, 'rt', encoding='UTF8')
         tree   = ET.parse(xml)
         root   = tree.getroot()
-        target = root[7][2][5][0]
-        mass   = np.round(float(target.attrib["mass"])*3, 2)
-        return mass        
+        target = root[7][2][6][2][1]
+        mass   = np.round(float(target.attrib["mass"])*2, 2)
+        return mass
 
     def get_fric(self):
         xml  = open(self.xml_path, 'rt', encoding='UTF8')
         tree = ET.parse(xml)
         root = tree.getroot()
-        target   = root[3][1]
+        target   = root[1][1]
         friction = target.attrib["friction"]
         return friction
 
@@ -331,7 +339,7 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
         """
         q = self.sim.data.qpos.flat
         return np.asarray(
-            [q[7],q[8],q[9],q[10],q[11],q[12],q[13],q[14]]
+            [q[3],q[4],q[5],q[6],q[7],q[8]]
             )*180.0/np.pi
 
     def get_heading(self):
@@ -341,7 +349,7 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
         q = self.data.get_body_xquat('torso')
         _, _, z_deg = quaternion_to_euler_angle(q[0], q[1], q[2], q[3])
         return z_deg
-
+    
     def get_time(self):
         """
             Get time in [Sec]
@@ -372,7 +380,7 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
         self.viewer.cam.lookat[0] = 0.0 # x-axis (let this follow the robot)
         self.viewer.cam.lookat[1] = 0.0
         self.viewer.cam.lookat[2] = 0.0
-        
+           
     def render_center(self):
         """
             Render with torso-centered
@@ -385,9 +393,10 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
             height = self.render_h)
         return frame
 
+    # CHANGE LEG / BOX
     def sample_tasks(self, num_tasks):
-        # return self.sample_tasks_leg_weight(num_tasks)
-        return self.sample_tasks_box_weight(num_tasks)
+        return self.sample_tasks_leg_weight(num_tasks)
+        # return self.sample_tasks_box_weight(num_tasks)
 
     def sample_tasks_box_weight(self, num_tasks):
         low_bound      = self.rand_mass_box[0]
@@ -403,28 +412,15 @@ class AntSoftMetaRL(mujoco_env.MujocoEnv,utils.EzPickle):
         tasks = [{'leg_weight': leg_weight} for leg_weight in leg_weights]
         return tasks
 
+    # CHANGE LEG / BOX
     def reset_task(self, task):
         self._task = task
-        self.set_box_weight(task.get('box_weight', 0))
-        # self.set_leg_weight(task.get('leg_weight', 0))
+        # self.set_box_weight(task.get('box_weight', 0))
+        self.set_leg_weight(task.get('leg_weight', 0))
 
 if __name__ == "__main__":
-    env = AntSoftMetaRL(VERBOSE=False, rand_mass_box=[1,2], rand_mass_leg=[1,2],rand_fric=[0.3, 0.8],render_mode=None,task={'box_weight': 1})       
-    print(env.get_fric(), env.get_box_weight())
-    # env = AntRandomEnvClassMixVersion(rand_mass_box=[1, 4], rand_mass_leg=[1, 4], rand_fric=[5, 6], render_mode=None)
-    # env.reset_random()
-    for i in range(300):
-        env.render()
-        if i % 100 == 0:
-            env.reset()
-            # env.reset_random()
-            # env.set_box_weight(1)
-            # env.set_leg_weight(1)
-            # env.set_fric(0.2)
-            # env.set_box_weight(1)
-            print(env.get_fric(), env.get_box_weight(), env.get_leg_weight())
-        # if i % 33 == 0:
-        #     env.set_box_weight(1)
-        #     print(env.get_fric()
-        action = np.random.standard_normal(8) * 0.7
-        env.step(action)
+    env = HalfCheetahRandomEnvClassMixVersion(render_mode=None)
+    for i in range(1000):
+        # env.render()
+        env.step(np.random.standard_normal(6))
+        print(env.get_heading())

@@ -10,10 +10,10 @@ from maml_rl.samplers import MultiTaskSampler
 from maml_rl.utils.helpers import get_policy_for_env, get_input_size
 from maml_rl.utils.reinforcement_learning import get_returns
 import wandb
-wandb.init(project="maml")
+
 
 def main(args):
-
+    wandb.init(project="maml", entity=str(args.seed))
     wandb.config.update(args)
 
     with open(args.config, 'r') as f:

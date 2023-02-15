@@ -111,3 +111,9 @@ wandb/
 
 # Slurm
 *.out
+
+ant*/
+halfcheetah*/
+snapbot*/
+
+*.xml

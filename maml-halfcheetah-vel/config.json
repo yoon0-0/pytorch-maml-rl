@@ -1,0 +1,47 @@
+{
+  "seed": 1,
+  "ls-backtrack-ratio": 0.8,
+  "nonlinearity": "tanh",
+  "num_workers": 63,
+  "use_cuda": false,
+  "cg-iters": 10,
+  "gae-lambda": 1.0,
+  "meta-batch-size": 40,
+  "first-order": false,
+  "num-batches": 500,
+  "hidden-sizes": [
+    64,
+    64
+  ],
+  "env-name": "Ant-SoftMetaRL-v0",
+  "config": "configs/maml/ant-soft-metaRL-ray.yaml",
+  "max-kl": 0.01,
+  "env-kwargs": {
+    "frame_skip": 5,
+    "render_w": 1500,
+    "render_h": 1000,
+    "task": {
+      "box_weight": 1
+    },
+    "rand_fric": null,
+    "name": "Ant with random box and leg",
+    "render_mode": null,
+    "rand_mass_leg": [
+      1,
+      4
+    ],
+    "rand_mass_box": [
+      1,
+      4
+    ],
+    "render_res": 200
+  },
+  "gamma": 0.99,
+  "fast-batch-size": 20,
+  "cg-damping": 1e-05,
+  "output_folder": "maml-halfcheetah-vel",
+  "ls-max-steps": 15,
+  "fast-lr": 0.1,
+  "num-steps": 1,
+  "device": "cpu"
+}

@@ -10,7 +10,8 @@ from copy import deepcopy
 from maml_rl.samplers.sampler import Sampler, make_env
 from maml_rl.envs.utils.sync_vector_env import SyncVectorEnv
 from maml_rl.episode import BatchEpisodes
-from maml_rl.utils.reinforcement_learning import reinforce_loss
+from maml_rl.utils.reinforcement_learning import reinforce_loss, get_returns
+import wandb
 
 import ray
 
@@ -130,9 +131,10 @@ class SamplerWorker(object):
             batch_size=batch_size,
             env_name=env_name,
             env_kwargs=env_kwargs,
-            baseline=deepcopy(baseline)
+            baseline=deepcopy(baseline),
         )
         for index in range(num_workers)]
+        self.seed = seed
 
     def sample(self,
             tasks,
@@ -140,18 +142,22 @@ class SamplerWorker(object):
             fast_lr=0.5,
             gamma=0.95,
             gae_lambda=1.0,
-            device='cpu'):
-
+            device='cpu',
+            TEST=False):
 
             # TODO: num_step=2 이상에서 되게 하기
             params=None
             params_list=[None]*len(tasks)
+            train_episodes_list = []
+            adapt_rewards = []
+            adapt_x_diffs = []
             for step in range(num_steps):
-                train_episodes = self.create_episodes(tasks,
+                train_episodes, x_diff = self.create_episodes(tasks,
                                                     params=params_list,
                                                     gamma=gamma,
                                                     gae_lambda=gae_lambda,
                                                     device=device)
+                train_episodes_list.append(train_episodes)
                 for i, train_episode in enumerate(train_episodes):
                     train_episode.log('_enqueueAt', datetime.now(timezone.utc))
 
@@ -161,13 +167,28 @@ class SamplerWorker(object):
                                                     params=params_list[i],
                                                     step_size=fast_lr,
                                                     first_order=True)
-            valid_episodes = self.create_episodes(tasks,
+                if TEST:
+                    print('TEST MODE')
+                    adapt_return = np.mean(get_returns(train_episodes))
+                    wandb.log({
+                        'adapt_returns': adapt_return,
+                        'x_diff': x_diff
+                    })
+                    adapt_rewards.append(adapt_return)
+                    adapt_x_diffs.append(x_diff)
+                    eval_reward_np = np.array(adapt_rewards)
+                    eval_x_diff_np = np.array(adapt_x_diffs)
+                    np.save('test/reward{}.npy'.format(self.seed), eval_reward_np)
+                    np.save('test/x_diff{}.npy'.format(self.seed), eval_x_diff_np)
+
+
+            valid_episodes, x_diff = self.create_episodes(tasks,
                                                 params=params_list,
                                                 gamma=gamma,
                                                 gae_lambda=gae_lambda,
                                                 device=device)
             # TODO: num_step=2 이상에서 되게 하기
-            return ([deepcopy(train_episodes)], deepcopy(valid_episodes))
+            return (deepcopy(train_episodes_list), deepcopy(valid_episodes)), x_diff
 
     def create_episodes(self,
                 tasks,
@@ -176,7 +197,6 @@ class SamplerWorker(object):
                 gae_lambda=1.0,
                 device="cpu"):
         episodes_ops = []
-
         t0 = time.time()
         for index, task in enumerate(tasks):
             episodes_ops.append(
@@ -188,8 +208,12 @@ class SamplerWorker(object):
                                                 device=device)
             )
         episodes = ray.get(episodes_ops)
-
-        return episodes
+        x_diff = episodes[0][1]
+        episode_list = []
+        for episode in episodes:
+            episode_list.append(episode[0])
+        # episodes = episodes
+        return episode_list, x_diff
 
 @ray.remote
 class RolloutWorker(object):
@@ -205,23 +229,35 @@ class RolloutWorker(object):
         self.batch_size = batch_size
         env_kwargs['index'] = index
         self.env = make_env(env_name, env_kwargs=env_kwargs)()
+        # np.random.seed(index)
+        # torch.manual_seed(index)
+        # self.workers = [RolloutWorker2.remote(
+        #     index=index,
+        #     batch_size=batch_size,
+        #     env_name=env_name,
+        #     env_kwargs=env_kwargs,
+        #     baseline=deepcopy(baseline),
+        # )
+        # for index in range(self.batch_size)]
 
     def sample_trajectories(self, task, policy, params):
         self.env.reset_task(task)
         for i in range(self.batch_size):
             done = False
             observations = self.env.reset()
+            step = 0
             with torch.no_grad():
-                while not done:
+                while step < 120 and not done: # 120 ant, halfcheetah 300 snapbot
                     # self.env.render()
                     observations_tensor = torch.from_numpy(observations).type(torch.float32)
+                    print(observations_tensor.shape)
                     pi = policy(observations_tensor, params)
                     actions_tensor = pi.sample()
                     actions = actions_tensor.cpu().numpy()
 
-                    new_observations, rewards, done, _ = self.env.step(actions)
-
+                    new_observations, rewards, done, info = self.env.step(actions)
                     yield (observations, actions, rewards, i)
+                    step+=1
                     observations = new_observations
 
     def create(self,
@@ -241,6 +277,21 @@ class RolloutWorker(object):
         rewards_list=[]
         batch_ids_list=[]
         t0 = time.time()
+
+        # episodes_ops = []
+        # for worker in self.workers:
+        #     episodes_ops.append(
+        #         worker.get_episodes.remote(task, policy, params)
+        #     )
+        # episodes_list = ray.get(episodes_ops)
+
+        # for episode in episodes_list:
+        #     observations, actions, rewards, batch_ids = episode
+        #     observations_list = observations_list + observations
+        #     actions_list = actions_list + actions
+        #     rewards_list = rewards_list + rewards
+        #     batch_ids_list = batch_ids_list + batch_ids
+        # TODO: logging info
         for observations, actions, rewards, batch_ids in self.sample_trajectories(task, policy, params):
             observations_list.append(observations)
             actions_list.append(actions)
@@ -252,4 +303,51 @@ class RolloutWorker(object):
         episodes.compute_advantages(self.baseline,
                                     gae_lambda=gae_lambda,
                                     normalize=True)
-        return episodes
+        return [episodes, self.env.sim.data.qpos[0]]
+
+# @ray.remote
+# class RolloutWorker2(object):
+#     def __init__(self,
+#                 index,
+#                 batch_size,
+#                 env_name,
+#                 env_kwargs,
+#                 baseline,
+#                 ) -> None:
+#         self.index = index
+#         self.baseline = baseline
+#         self.batch_size = batch_size
+#         env_kwargs['index'] = index
+#         self.env = make_env(env_name, env_kwargs=env_kwargs)()
+#         np.random.seed(index)
+#         torch.manual_seed(index)
+    
+#     def get_episodes(self, task, policy, params):
+#         observations_list=[]
+#         actions_list=[]
+#         rewards_list=[]
+#         batch_ids_list=[]
+
+#         for observations, actions, rewards, batch_ids in self.sample_trajectories(task, policy, params):
+#             observations_list.append(observations)
+#             actions_list.append(actions)
+#             rewards_list.append(rewards)
+#             batch_ids_list.append(batch_ids)
+#         return observations_list, actions_list, rewards_list, batch_ids_list
+
+#     def sample_trajectories(self, task, policy, params):
+#         self.env.reset_task(task)
+#         step=0
+#         observations = self.env.reset()
+#         with torch.no_grad():
+#             while step < 120:
+#                 # self.env.render()
+#                 observations_tensor = torch.from_numpy(observations).type(torch.float32)
+#                 pi = policy(observations_tensor, params)
+#                 actions_tensor = pi.sample()
+#                 actions = actions_tensor.cpu().numpy()
+
+#                 new_observations, rewards, done, _ = self.env.step(actions)
+#                 yield (observations, actions, rewards, self.index)
+#                 step+=1
+#                 observations = new_observations
