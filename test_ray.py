@@ -97,8 +97,8 @@ if __name__ == '__main__':
     # Evaluation
     evaluation = parser.add_argument_group('Evaluation')
     evaluation.add_argument('--num-batches', type=int, default=1,
-        help='number of batches (default: 10)')
-    evaluation.add_argument('--meta-batch-size', type=int, default=1,
+        help='number of batches (default: 1)')
+    evaluation.add_argument('--meta-batch-size', type=int, default=40,
         help='number of tasks per batch (default: 40)')
 
     # Miscellaneous
