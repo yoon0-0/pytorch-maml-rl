@@ -12,10 +12,13 @@ from maml_rl.samplers import MultiTaskSamplerRay
 from maml_rl.utils.helpers import get_policy_for_env, get_input_size
 from maml_rl.utils.reinforcement_learning import get_returns
 import wandb
-wandb.init(project="maml")
+wandb_flag = True
+if wandb_flag:
+    wandb.init(project="maml")
 
 def main(args):
-    wandb.config.update(args)
+    if wandb_flag:
+        wandb.config.update(args)
 
     with open(args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
@@ -43,7 +46,8 @@ def main(args):
                                 hidden_sizes=config['hidden-sizes'],
                                 nonlinearity=config['nonlinearity'])
     policy.share_memory()
-    wandb.watch(policy)
+    if wandb_flag:
+        wandb.watch(policy)
 
     # Baseline
     baseline = LinearFeatureBaseline(get_input_size(env))
@@ -88,13 +92,14 @@ def main(args):
                     num_iterations=num_iterations,
                     train_returns=get_returns(train_episodes[0]),
                     valid_returns=get_returns(valid_episodes))
-        wandb.log({
-            'train_returns': np.mean(logs['train_returns']),
-            'valid_returns': np.mean(logs['valid_returns']),
-            'loss': np.mean(logs['loss_after']),
-            'kl_after': np.mean(logs['kl_after']),
-            'x_diff': x_diff
-        })
+        if wandb_flag:
+            wandb.log({
+                'train_returns': np.mean(logs['train_returns']),
+                'valid_returns': np.mean(logs['valid_returns']),
+                'loss': np.mean(logs['loss_after']),
+                'kl_after': np.mean(logs['kl_after']),
+                'x_diff': x_diff
+            })
         eval_rewards.append(np.mean(logs['valid_returns']))
 
         # Save policy
@@ -113,12 +118,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Reinforcement learning with '
         'Model-Agnostic Meta-Learning (MAML) - Train')
 
-    parser.add_argument('--config', default='configs/maml/ant-soft-metaRL-ray.yaml', type=str, required=True,
+    parser.add_argument('--config', default='configs/maml/snapbot-6leg-ray.yaml', type=str,# required=True,
         help='path to the configuration file.')
 
     # Miscellaneous
     misc = parser.add_argument_group('Miscellaneous')
-    misc.add_argument('--output-folder', default='ant-soft-metaRL-ray-0.5-1', type=str,
+    misc.add_argument('--output-folder', default='snapbot-6leg-ray-2', type=str,
         help='name of the output folder')
     misc.add_argument('--seed', type=int, default=1,
         help='random seed')
@@ -134,5 +139,5 @@ if __name__ == '__main__':
                    and args.use_cuda) else 'cpu')
 
     main(args)
-    
-    wandb.alert('finished', 'Hooray!!')
+    if wandb_flag:
+        wandb.alert('finished', 'Hooray!!')
