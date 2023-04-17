@@ -170,10 +170,11 @@ class SamplerWorker(object):
                 if TEST:
                     print('TEST MODE')
                     adapt_return = np.mean(get_returns(train_episodes))
-                    wandb.log({
-                        'adapt_returns': adapt_return,
-                        'x_diff': x_diff
-                    })
+                    if True: # TEST
+                        wandb.log({
+                            'adapt_returns': adapt_return,
+                            'x_diff': x_diff
+                        })
                     adapt_rewards.append(adapt_return)
                     adapt_x_diffs.append(x_diff)
                     eval_reward_np = np.array(adapt_rewards)
@@ -240,6 +241,7 @@ class RolloutWorker(object):
         # )
         # for index in range(self.batch_size)]
 
+    # TODO: 하드 코딩 바꾸기
     def sample_trajectories(self, task, policy, params):
         self.env.reset_task(task)
         for i in range(self.batch_size):
@@ -247,15 +249,53 @@ class RolloutWorker(object):
             observations = self.env.reset()
             step = 0
             with torch.no_grad():
-                while step < 120 and not done: # 120 ant, halfcheetah 300 snapbot
+                while step < 300 and not done: # 120 ant, halfcheetah 300 snapbot
                     # self.env.render()
                     observations_tensor = torch.from_numpy(observations).type(torch.float32)
-                    print(observations_tensor.shape)
+                    num_zeros = 0
+                    # print('observations_tensor.shape', observations_tensor.shape)
+                    if self.env.test:
+                        for idx in self.env.malfun_leg_idxs:
+                            observations_tensor = torch.cat([observations_tensor[:num_zeros+9+4*idx], torch.zeros(4), observations_tensor[num_zeros+9+4*idx:]], dim=0) # add 4 zero
+                            num_zeros += 4
+                            observations_tensor = torch.cat([observations_tensor[:num_zeros+27+8+4*idx], torch.zeros(4), observations_tensor[num_zeros+27+8+4*idx:]], dim=0) # add 4 zero
+                            num_zeros += 4
+                            observations_tensor = torch.cat([observations_tensor[:num_zeros+27+28+9+4*idx], torch.zeros(4), observations_tensor[num_zeros+27+28+9+4*idx:]], dim=0) # add 4 zero
+                            num_zeros += 4
+                            observations_tensor = torch.cat([observations_tensor[:num_zeros+27+28+27+8+4*idx], torch.zeros(4), observations_tensor[num_zeros+27+28+27+8+4*idx:]], dim=0) # add 4 zero
+                            num_zeros += 4
+                            observations_tensor = torch.cat([observations_tensor[:num_zeros+27+28+27+28+2*idx], torch.zeros(2), observations_tensor[num_zeros+27+28+27+28+2*idx:]], dim=0) # add 4 zero
+                            num_zeros += 2
+                    # print('observations_tensor.shape', observations_tensor.shape)
                     pi = policy(observations_tensor, params)
                     actions_tensor = pi.sample()
                     actions = actions_tensor.cpu().numpy()
+                    # print("actions.shape", actions.shape)
+                    # print("self.env.malfun_leg_idxs", self.env.malfun_leg_idxs)
+                    if not self.env.test:
+                        for idx in self.env.malfun_leg_idxs:
+                            actions[2*idx:2*idx+2] = 0
+                    else:
+                        for idx in self.env.malfun_leg_idxs:
+                            actions = np.delete(actions, [2*idx, 2*idx+1])
 
                     new_observations, rewards, done, info = self.env.step(actions)
+                    num_zeros = 0
+                    # print("observation.shape", observations.shape)
+                    if self.env.test:
+                        for idx in self.env.malfun_leg_idxs:
+                            observations = np.insert(observations, num_zeros+9+4*idx, np.zeros(4))#torch.cat([observations[:9+4*idx], torch.zeros(4), observations[9+4*idx:]], dim=0) # add 4 zero
+                            num_zeros += 4
+                            observations = np.insert(observations, num_zeros+27+8+4*idx, np.zeros(4))#torch.cat([observations[:num_zeros+28+8+4*idx], torch.zeros(4), observations[4+28+8+4*idx:]], dim=0) # add 4 zero
+                            num_zeros += 4
+                            observations = np.insert(observations, num_zeros+27+28+9+4*idx, np.zeros(4))#torch.cat([observations[:num_zeros+28+29+9+4*idx], torch.zeros(4), observations[num_zeros+28+29+9+4*idx:]], dim=0) # add 4 zero
+                            num_zeros += 4
+                            observations = np.insert(observations, num_zeros+27+28+27+8+4*idx, np.zeros(4))#torch.cat([observations[:num_zeros+28+29+28+8+4*idx], torch.zeros(4), observations[num_zeros+28+29+28+8+4*idx:]], dim=0) # add 4 zero
+                            num_zeros += 4
+                            observations = np.insert(observations, num_zeros+27+28+27+28+2*idx, np.zeros(2))#torch.cat([observations[:num_zeros+28+29+28+28+2*idx], torch.zeros(2), observations[num_zeros+28+29+28+28+2*idx:]], dim=0) # add 4 zero
+                            num_zeros += 2
+                            actions = np.insert(actions, 2*idx, np.zeros(2))
+
                     yield (observations, actions, rewards, i)
                     step+=1
                     observations = new_observations
