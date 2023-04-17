@@ -84,6 +84,12 @@ register(
 )
 
 register(
+    'Snapbot-6Leg-Hard-v0',
+    entry_point='maml_rl.envs.utils.wrappers:mujoco_wrapper',
+    kwargs={'entry_point': 'maml_rl.envs.mujoco.snapbot_hard_metaRL:Snapbot6EnvClass'}
+)
+
+register(
     'Snapbot-5Leg-v0',
     entry_point='maml_rl.envs.utils.wrappers:mujoco_wrapper',
     kwargs={'entry_point': 'maml_rl.envs.mujoco.snapbot_soft_metaRL:Snapbot5EnvClass'}
