@@ -66,8 +66,8 @@ class HalfCheetahSoftMetaRL(mujoco_env.MujocoEnv, utils.EzPickle):
         self._task = task
 
         # self.reset_random()
-        # self.set_box_weight(task.get('box_weight', 0))
-        self.set_leg_weight(task.get('leg_weight', 0))
+        self.set_box_weight(task.get('box_weight', 0))
+        # self.set_leg_weight(task.get('leg_weight', 0))
 
     def step(self, a):
         """
@@ -172,15 +172,18 @@ class HalfCheetahSoftMetaRL(mujoco_env.MujocoEnv, utils.EzPickle):
 
     def set_box_weight(self, box_weight, TEST=False):
         if not TEST:
-            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/halfcheetah/half_cheetah_"+str(self._index)+".xml"
+            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/halfcheetah/half_cheetah_box_"+str(self._index)+".xml"
         else:
             print('TEST MODE')
-            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/halfcheetah/half_cheetah_test.xml"
+            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/halfcheetah/half_cheetah_box_test.xml"
         self.xml_path = xml_path
         low_bound      = self.rand_mass_box[0]
         high_bound     = self.rand_mass_box[1]
         mass_amplitude = high_bound - low_bound
-        box_rgb    = np.round(abs((box_weight-low_bound)/mass_amplitude - 1), 3)
+        if mass_amplitude != 0:
+            box_rgb    = np.round(abs((box_weight-low_bound)/mass_amplitude - 1), 3)
+        else:
+            box_rgb    = np.round(abs((box_weight-low_bound)/1 - 1), 3)
         target_xml = open(self.xml_path, 'rt', encoding='UTF8')
         tree = ET.parse(target_xml)
         root = tree.getroot()
@@ -395,8 +398,8 @@ class HalfCheetahSoftMetaRL(mujoco_env.MujocoEnv, utils.EzPickle):
 
     # CHANGE LEG / BOX
     def sample_tasks(self, num_tasks):
-        return self.sample_tasks_leg_weight(num_tasks)
-        # return self.sample_tasks_box_weight(num_tasks)
+        # return self.sample_tasks_leg_weight(num_tasks)
+        return self.sample_tasks_box_weight(num_tasks)
 
     def sample_tasks_box_weight(self, num_tasks):
         low_bound      = self.rand_mass_box[0]
@@ -415,8 +418,8 @@ class HalfCheetahSoftMetaRL(mujoco_env.MujocoEnv, utils.EzPickle):
     # CHANGE LEG / BOX
     def reset_task(self, task):
         self._task = task
-        # self.set_box_weight(task.get('box_weight', 0))
-        self.set_leg_weight(task.get('leg_weight', 0))
+        self.set_box_weight(task.get('box_weight', 0))
+        # self.set_leg_weight(task.get('leg_weight', 0))
 
 if __name__ == "__main__":
     env = HalfCheetahRandomEnvClassMixVersion(render_mode=None)
