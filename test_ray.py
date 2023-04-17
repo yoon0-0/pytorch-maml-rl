@@ -24,11 +24,12 @@ def main(args):
         torch.cuda.manual_seed_all(args.seed)
 
     env = gym.make(config['env-name'], **config['env-kwargs'])
-    if config['transfer-env']:
-        print(config['transfer-env'])
-        transfer_env = gym.make(config['transfer-env'], **config['env-kwargs'])
+
+    if 'adapt-env-name' in config:
+        print(config['adapt-env-name'])
+        adapt_env = gym.make(config['adapt-env-name'], **config['env-kwargs'])
+        adapt_env.close()
     env.close()
-    transfer_env.close()
 
     # Policy
     policy = get_policy_for_env(env,
@@ -40,15 +41,30 @@ def main(args):
     policy.share_memory()
 
     # Baseline
-    baseline = LinearFeatureBaseline(get_input_size(env))
+    if 'adapt-env-name' in config:
+        baseline = LinearFeatureBaseline(get_input_size(env))
+    else:
+        baseline = LinearFeatureBaseline(get_input_size(env))
 
     # Sampler
-    sampler = MultiTaskSamplerRay(config['transfer-env'],
+    if 'adapt-env-name' in config:
+        # TODO
+        sampler = MultiTaskSamplerRay(config['adapt-env-name'],
+                        env_kwargs=config['env-kwargs'],
+                        batch_size=config['fast-batch-size'],
+                        policy=policy,
+                        baseline=baseline,
+                        env=env,
+                        seed=args.seed,
+                        num_workers=config['meta-batch-size'])
+        pass
+    else:
+        sampler = MultiTaskSamplerRay(config['env-name'],
                                env_kwargs=config['env-kwargs'],
                                batch_size=config['fast-batch-size'],
                                policy=policy,
                                baseline=baseline,
-                               env=transfer_env,
+                               env=env,
                                seed=args.seed,
                                num_workers=config['meta-batch-size'])
 
