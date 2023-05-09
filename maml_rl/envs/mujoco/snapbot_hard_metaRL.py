@@ -157,14 +157,14 @@ class Snapbot6EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
         # self.sim.data.qpos.flat = 7(x,y,z,a,b,c,d) + 2(camera) + 4(다리 당 joint)*6(다리 개수) = 33
         new_qpos = self.sim.data.qpos
         new_qvel = self.sim.data.qvel
-        # zero masking
-        if self.malfun_leg_idxs:
-            for idx in self.malfun_leg_idxs:
-                new_qpos[9:][4*idx:4*idx+4] = 0
-                new_qvel[8:][4*idx:4*idx+4] = 0
-                self.prev_state[9:][4*idx:4*idx+4] = 0
-                self.prev_state[31+8:][4*idx:4*idx+4] = 0
-                self.prev_torque[2*idx:2*idx+2] = 0
+        # zero masking TODO
+        # if self.malfun_leg_idxs:
+        #     for idx in self.malfun_leg_idxs:
+        #         new_qpos[9:][4*idx:4*idx+4] = 0
+        #         new_qvel[8:][4*idx:4*idx+4] = 0
+        #         self.prev_state[9:][4*idx:4*idx+4] = 0
+        #         self.prev_state[31+8:][4*idx:4*idx+4] = 0
+        #         self.prev_torque[2*idx:2*idx+2] = 0
 
         # print("new_qpos", new_qpos)
         # print("new_qvel", new_qvel)
@@ -289,8 +289,8 @@ class Snapbot6EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
 
     def reset_task(self, task):
         self._task = task
-        # if self.malfun_leg_idxs:
-        #     self.set_malfun_leg()
+        if self.malfun_leg_idxs:
+            self.set_malfun_leg()
         # self.set_box_weight(task.get('box_weight', 0))
         # self.set_leg_weight(task.get('leg_weight', 0))
 
@@ -423,14 +423,6 @@ class Snapbot5EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
         # self.sim.data.qpos.flat = 7(x,y,z,a,b,c,d) + 2(camera) + 4(다리 당 joint)*5(다리 개수) = 29
         new_qpos = self.sim.data.qpos
         new_qvel = self.sim.data.qvel
-        # zero masking
-        if not self.test and self.malfun_leg_idxs:
-            for idx in self.malfun_leg_idxs:
-                new_qpos[9:][4*idx:4*idx+4] = 0
-                new_qvel[8:][4*idx:4*idx+4] = 0
-                self.prev_state[9:][4*idx:4*idx+4] = 0
-                self.prev_state[31+8:][4*idx:4*idx+4] = 0
-                self.prev_torque[2*idx:2*idx+2] = 0
 
         # print("new_qpos", new_qpos)
         # print("new_qvel", new_qvel)
@@ -537,7 +529,7 @@ class Snapbot5EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
             width  = self.render_w,
             height = self.render_h)
         return frame
-    
+
     def sample_tasks(self, num_tasks):
         # return self.sample_tasks_leg_weight(num_tasks)
         # return self.sample_tasks_box_weight(num_tasks)
@@ -545,6 +537,7 @@ class Snapbot5EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
     
     def reset_task(self, task):
         self._task = task
+        self.set_malfun_leg()
 
 # Snapbot (4 legs) Environment
 class Snapbot4EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
@@ -563,7 +556,9 @@ class Snapbot4EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
                 render_h    = 1000,
                 task        = {},
                 index       = 0,
-                render_res  = 200
+                render_res  = 200,
+                n_malfun_leg= 2,
+                test        = True
                 ):
         """
             Initialize
@@ -585,7 +580,9 @@ class Snapbot4EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
         self.joint_pos_deg_max = np.array([43,40,43,40,43,40,43,40])
         self._task = task
         self._index = index
-
+        self.test = test
+        self._n_malfun_leg = n_malfun_leg
+        self.set_malfun_leg()
         xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/snapbot_4/robot_4_1245.xml"
         self.xml_path = xml_path
 
@@ -625,8 +622,6 @@ class Snapbot4EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
                 render_h    = render_h,
                 render_res  = render_res
                 )
-
-        self.set_box_weight(task.get('box_weight', 0))
 
     def step(self, a):
         """
@@ -769,92 +764,6 @@ class Snapbot4EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
             width  = self.render_w,
             height = self.render_h)
         return frame
-
-    def set_leg_weight(self, leg_weight, TEST=False):
-        return
-        if not TEST:
-            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/ant_leg_"+str(self._index)+".xml"
-        else:
-            print('TEST MODE')
-            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/ant_leg_test.xml"
-        self.xml_path = xml_path
-        low_bound      = self.rand_mass_leg[0]/3
-        high_bound     = self.rand_mass_leg[1]/3
-        mass_amplitude = high_bound - low_bound
-        if mass_amplitude != 0:
-            leg_rgb    = np.round(abs((leg_weight/3-low_bound)/mass_amplitude - 1), 3)
-        else:
-            leg_rgb    = np.round(abs((leg_weight/3-low_bound)/1 - 1), 3)
-        target_xml = open(self.xml_path, 'rt', encoding='UTF8')
-        tree = ET.parse(target_xml)
-        root = tree.getroot()
-        target_tag_1 = root[5][2][5][0]
-        target_tag_2 = root[5][2][5][1][1]
-        target_tag_3 = root[5][2][5][1][2][1]
-        target_list  = [target_tag_1, target_tag_2, target_tag_3]
-        for i in target_list:
-            i.attrib["mass"] = "{}".format(leg_weight/3)
-            i.attrib["rgba"] = "{} {} {} 1".format(leg_rgb, leg_rgb, leg_rgb)
-        tree.write(self.xml_path)
-
-        # Open xml
-        try:
-            mujoco_env.MujocoEnv.__init__(
-            self,
-            model_path      = self.xml_path,
-            frame_skip      = self.frame_skip,
-            mujoco_bindings = 'mujoco_py'
-            )
-        except:
-            mujoco_env.MujocoEnv.__init__(
-            self,
-            model_path      = self.xml_path,
-            frame_skip      = self.frame_skip
-            )
-        utils.EzPickle.__init__(self)
-        # Observation and action dimension
-        self.odim = self.observation_space.shape[0]
-        self.adim = self.action_space.shape[0]
-
-    def set_box_weight(self, box_weight, TEST=False):
-        return
-        if not TEST:
-            xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/snapbot_4/robot_4_1245.xml"
-        # else:
-        #     print('TEST MODE')
-        #     xml_path   = os.path.dirname(os.path.abspath(__file__))+"/xml/ant_box_leg_test.xml"
-        self.xml_path = xml_path
-        # low_bound      = self.rand_mass_box[0]
-        # high_bound     = self.rand_mass_box[1]
-        # mass_amplitude = high_bound - low_bound
-        # if mass_amplitude == 0: mass_amplitude = 1
-        # box_rgb    = np.round(abs((box_weight-low_bound)/mass_amplitude - 1), 3)
-        # target_xml = open(xml_path, 'rt', encoding='UTF8')
-        # tree = ET.parse(target_xml)
-        # root = tree.getroot()
-        # target_tag= root[7][2][7][2][2]
-        # target_tag.attrib["mass"] = "{}".format(box_weight)
-        # target_tag.attrib["rgba"] = "{} {} {} 1".format(box_rgb, box_rgb, box_rgb)
-        # tree.write(xml_path)
-
-        try:
-            mujoco_env.MujocoEnv.__init__(
-            self,
-            model_path      = xml_path,
-            frame_skip      = self.frame_skip,
-            mujoco_bindings = 'mujoco_py'
-            )
-        except:
-            mujoco_env.MujocoEnv.__init__(
-            self,
-            model_path      = xml_path,
-            frame_skip      = self.frame_skip
-            )
-        utils.EzPickle.__init__(self)
-        # Observation and action dimension
-        self.odim = self.observation_space.shape[0]
-        self.adim = self.action_space.shape[0]
-
         
     def sample_tasks(self, num_tasks):
         # return self.sample_tasks_leg_weight(num_tasks)
@@ -873,11 +782,17 @@ class Snapbot4EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
         leg_weights = self.np_random.uniform(low_bound, high_bound, size=(num_tasks,))
         tasks = [{'leg_weight': leg_weight} for leg_weight in leg_weights]
         return tasks
+    
+    def set_malfun_leg(self):
+        # self.ctrl_leg = random.sample(range(6), 6-self._n_malfun_leg)
+        if not self.test:
+            self.malfun_leg_idxs = random.sample(range(4), self._n_malfun_leg)
+        else:
+            self.malfun_leg_idxs = [2, 5] # 3, 6th
 
     def reset_task(self, task):
         self._task = task
-        # self.set_box_weight(task.get('box_weight', 0))
-        # self.set_leg_weight(task.get('leg_weight', 0))
+        self.set_malfun_leg()
 
 # SnapbotEnvClass
 class Snapbot3EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
@@ -893,7 +808,8 @@ class Snapbot3EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
                 render_mode = 'human',
                 render_w    = 1500,
                 render_h    = 1000,
-                render_res  = 200
+                render_res  = 200,
+                test        = True
                 ):
         """
             Initialize
@@ -912,7 +828,8 @@ class Snapbot3EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
         self.k_d = 0.01,
         self.joint_pos_deg_min = -np.array([43,40,43,40,43,40])
         self.joint_pos_deg_max = np.array([43,40,43,40,43,40])
-
+        self.set_malfun_leg()
+        self.test       = test
         # Open xml
         try:
             mujoco_env.MujocoEnv.__init__(
@@ -1003,7 +920,10 @@ class Snapbot3EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
             self.prev_torque,
             self.index
         ])
-    
+
+    def sample_tasks(self, num_tasks):
+        return
+
     def reset_model(self):
         """
             Reset
@@ -1091,7 +1011,15 @@ class Snapbot3EnvClass(mujoco_env.MujocoEnv, utils.EzPickle):
             width  = self.render_w,
             height = self.render_h)
         return frame
-    
+
+    def set_malfun_leg(self):
+        self.malfun_leg_idxs = [1, 3, 6]
+
+    def reset_task(self, task):
+        self._task = task
+        # self.set_box_weight(task.get('box_weight', 0))
+        # self.set_leg_weight(task.get('leg_weight', 0))
+
 if __name__ == "__main__":
     env = Snapbot3EnvClass(leg_idx=245, render_mode=None)
     # env = Snapbot3EnvClass(render_mode=None)
